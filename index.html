@@ -1,0 +1,1033 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Z3RO: Cyber Infiltration Engine</title>
+    <style>
+        body {
+            background-color: #05020c;
+            color: #00ffcc;
+            font-family: 'Courier New', Courier, monospace;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+        h1 {
+            color: #ff007f;
+            text-shadow: 0 0 10px #ff007f, 0 0 20px #00ffcc;
+            margin-bottom: 5px;
+            font-size: 2rem;
+            letter-spacing: 4px;
+        }
+        #game-container {
+            position: relative;
+            background-color: #0b0616;
+            border: 4px solid #3d1e6d;
+            box-shadow: 0 0 25px rgba(255, 0, 127, 0.3), inset 0 0 20px rgba(0, 255, 204, 0.1);
+            border-radius: 8px;
+            padding: 10px;
+        }
+        canvas {
+            display: block;
+            background-color: #000000;
+            image-rendering: pixelated;
+        }
+        #controls-panel {
+            margin-top: 15px;
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            justify-content: center;
+            max-width: 960px;
+        }
+        #editor-palette {
+            margin-top: 15px;
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: center;
+            max-width: 960px;
+            color: #00ffcc;
+            background: #110924;
+            padding: 10px;
+            border: 2px dashed #ff007f;
+            border-radius: 4px;
+        }
+        button {
+            background-color: #1a0f30;
+            color: #00ffcc;
+            border: 2px solid #00ffcc;
+            padding: 8px 16px;
+            font-family: 'Courier New', Courier, monospace;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            text-transform: uppercase;
+            box-shadow: 0 0 5px rgba(0, 255, 204, 0.2);
+        }
+        button:hover {
+            background-color: #00ffcc;
+            color: #1a0f30;
+            box-shadow: 0 0 15px #00ffcc;
+        }
+        button.active {
+            background-color: #ff007f;
+            color: #ffffff;
+            border-color: #ff007f;
+            box-shadow: 0 0 15px #ff007f;
+        }
+        #instructions {
+            margin-top: 15px;
+            color: #8c72b2;
+            font-size: 0.85rem;
+            text-align: center;
+            max-width: 960px;
+            line-height: 1.4;
+        }
+        .highlight { color: #ff007f; font-weight: bold; }
+        .info { color: #00ffcc; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+    <h1>Z3RO: CYBER INFILTRATION</h1>
+    
+    <div id="game-container">
+        <canvas id="gameCanvas" width="960" height="640"></canvas>
+    </div>
+
+    <div id="controls-panel">
+        <button id="btn-game" class="active">Play Campaign</button>
+        <button id="btn-survival">Endless Survival</button>
+        <button id="btn-editor">Editor Mode</button>
+        <button id="btn-tutorial">Restart Tutorial</button>
+        <button id="btn-reset-save" style="border-color:#ff007f; color:#ff007f;">Reset Save Data</button>
+    </div>
+
+    <div id="editor-palette" style="display:none;">
+        <span>[PALETTE]:</span>
+        <button class="palette-item active" data-tile="0">Floor (0)</button>
+        <button class="palette-item" data-tile="1">Firewall Wall (1)</button>
+        <button class="palette-item" data-tile="2">Terminal Core (2)</button>
+        <button class="palette-item" data-tile="3">Guard Drone (3)</button>
+        <button class="palette-item" data-tile="4">Player Spawn (4)</button>
+        <button id="btn-save-map" style="border-color:#ff007f; color:#ff007f;">Save Level</button>
+        <button id="btn-export-map">Export JSON</button>
+        <button id="btn-import-map">Import JSON</button>
+    </div>
+
+    <div id="instructions">
+        <span class="info">GAME:</span> Move with <span class="highlight">WASD / Arrows</span>. Access <span class="highlight">Terminals (T)</span> to trigger Breach Matrix. Avoid <span class="highlight">Drones (D)</span>. Use Active Items with <span class="highlight">1, 2, 3</span> keys.<br>
+        <span class="info">EDITOR:</span> Click/Drag on canvas grid to draw selected elements. Use <span class="highlight">Export JSON</span> to copy share codes, or <span class="highlight">Import JSON</span> to load external maps.
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // AUDIO ENGINE (Web Audio API Synthesizer)
+        const AudioEngine = {
+            ctx: null,
+            init() {
+                if (!this.ctx) {
+                    this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+                }
+            },
+            playStep() {
+                this.init();
+                let osc = this.ctx.createOscillator();
+                let gain = this.ctx.createGain();
+                osc.type = 'square';
+                osc.frequency.setValueAtTime(150, this.ctx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(300, this.ctx.currentTime + 0.05);
+                gain.gain.setValueAtTime(0.05, this.ctx.currentTime);
+                gain.gain.linearRampToValueAtTime(0, this.ctx.currentTime + 0.05);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start();
+                osc.stop(this.ctx.currentTime + 0.05);
+            },
+            playSuccess() {
+                this.init();
+                let now = this.ctx.currentTime;
+                let notes = [261.63, 329.63, 392.00, 523.25];
+                notes.forEach((f, i) => {
+                    let osc = this.ctx.createOscillator();
+                    let gain = this.ctx.createGain();
+                    osc.type = 'triangle';
+                    osc.frequency.setValueAtTime(f, now + i * 0.05);
+                    gain.gain.setValueAtTime(0.1, now + i * 0.05);
+                    gain.gain.linearRampToValueAtTime(0, now + i * 0.05 + 0.1);
+                    osc.connect(gain);
+                    gain.connect(this.ctx.destination);
+                    osc.start(now + i * 0.05);
+                    osc.stop(now + i * 0.05 + 0.1);
+                });
+            },
+            playFailure() {
+                this.init();
+                let osc = this.ctx.createOscillator();
+                let gain = this.ctx.createGain();
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(180, this.ctx.currentTime);
+                osc.frequency.linearRampToValueAtTime(60, this.ctx.currentTime + 0.3);
+                gain.gain.setValueAtTime(0.15, this.ctx.currentTime);
+                gain.gain.linearRampToValueAtTime(0, this.ctx.currentTime + 0.3);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start();
+                osc.stop(this.ctx.currentTime + 0.3);
+            },
+            playAlarm() {
+                this.init();
+                let osc = this.ctx.createOscillator();
+                let gain = this.ctx.createGain();
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(600, this.ctx.currentTime);
+                osc.frequency.linearRampToValueAtTime(900, this.ctx.currentTime + 0.15);
+                gain.gain.setValueAtTime(0.04, this.ctx.currentTime);
+                gain.gain.linearRampToValueAtTime(0, this.ctx.currentTime + 0.15);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start();
+                osc.stop(this.ctx.currentTime + 0.15);
+            },
+            playVictory() {
+                this.init();
+                let now = this.ctx.currentTime;
+                let notes = [523.25, 659.25, 783.99, 1046.50];
+                notes.forEach((f, i) => {
+                    let osc = this.ctx.createOscillator();
+                    let gain = this.ctx.createGain();
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(f, now + i * 0.1);
+                    gain.gain.setValueAtTime(0.1, now + i * 0.1);
+                    gain.gain.linearRampToValueAtTime(0, now + i * 0.1 + 0.3);
+                    osc.connect(gain);
+                    gain.connect(this.ctx.destination);
+                    osc.start(now + i * 0.1);
+                    osc.stop(now + i * 0.1 + 0.3);
+                });
+            }
+        };
+
+        // PROCEDURAL SPRITE GENERATION ATLAS
+        const SpriteAtlas = {
+            canvas: null,
+            ctx: null,
+            init() {
+                this.canvas = document.createElement('canvas');
+                this.canvas.width = 256;
+                this.canvas.height = 256;
+                this.ctx = this.canvas.getContext('2d');
+                this.generateAssets();
+            },
+            generateAssets() {
+                let c = this.ctx;
+                c.clearRect(0,0,256,256);
+
+                // Player Texture (0,0)
+                c.fillStyle = '#6a0dad'; c.fillRect(2, 4, 12, 12);
+                c.fillStyle = '#ff00ff'; c.fillRect(4, 6, 8, 6);
+                c.fillStyle = '#00ffcc'; c.fillRect(5, 7, 6, 2);
+
+                // Wall Texture (16,0)
+                c.fillStyle = '#1f0d3d'; c.fillRect(16, 0, 16, 16);
+                c.strokeStyle = '#3d1e6d'; c.lineWidth = 1; c.strokeRect(17, 1, 14, 14);
+                c.fillStyle = '#ff007f'; c.fillRect(20, 4, 2, 2); c.fillRect(28, 10, 2, 2);
+
+                // Terminal Node (32,0)
+                c.fillStyle = '#0a0a0a'; c.fillRect(32, 0, 16, 16);
+                c.strokeStyle = '#00ffcc'; c.strokeRect(33, 1, 14, 14);
+                c.fillStyle = '#00ffcc'; c.fillRect(37, 5, 6, 6);
+
+                // Drone Node (48,0)
+                c.fillStyle = '#333'; c.fillRect(50, 4, 12, 6);
+                c.fillStyle = '#ff0055'; c.fillRect(54, 6, 4, 2);
+                c.fillStyle = '#00ffcc'; c.fillRect(48, 2, 4, 2); c.fillRect(60, 2, 4, 2);
+            },
+            draw(ctx, sx, sy, dx, dy, dw, dh) {
+                ctx.drawImage(this.canvas, sx, sy, 16, 16, dx, dy, dw, dh);
+            }
+        };
+        SpriteAtlas.init();
+
+        const TILE_SIZE = 40;
+        const COLS = 18;
+        const ROWS = 12;
+        const GAME_WIDTH = COLS * TILE_SIZE;  
+        const SIDEBAR_WIDTH = 240;
+        const TOTAL_WIDTH = GAME_WIDTH + SIDEBAR_WIDTH; 
+
+        let gameMode = 'TUTORIAL'; 
+        let currentLevel = 1;
+        let score = 0;
+        let alarmActive = false;
+        let glitchIntensity = 0;
+        let gameTimer = 180;
+        let loopId = null;
+        let lastTime = 0;
+        let ticks = 0;
+
+        let inventory = [
+            { id: 1, name: 'TERM CLOAK', qty: 1, active: false, cooldown: 0 },
+            { id: 2, name: 'DATA TETHER', qty: 1, active: false, cooldown: 0 },
+            { id: 3, name: 'GLITCH OVL', qty: 1, active: false, cooldown: 0 }
+        ];
+
+        const CAMPAIGN_MAPS = {
+            1: {
+                name: "STAGE 01: MAINFRAME PERIMETER",
+                grid: [
+                    [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+                    [1,4,0,0,1,0,0,0,0,1,0,0,0,0,1,0,2,1],
+                    [1,1,1,0,1,0,1,1,0,1,0,1,1,0,1,0,1,1],
+                    [1,2,0,0,0,0,1,2,0,0,0,0,1,0,0,0,0,1],
+                    [1,1,1,1,1,0,1,1,1,1,1,0,1,1,1,1,0,1],
+                    [1,0,0,3,1,0,0,0,0,0,1,0,3,0,0,1,0,1],
+                    [1,0,1,0,1,1,1,1,0,1,1,1,1,0,1,1,0,1],
+                    [1,0,1,0,0,0,2,1,0,1,0,0,0,0,1,2,0,1],
+                    [1,0,1,1,1,1,0,1,0,1,0,1,1,1,1,1,0,1],
+                    [1,0,0,0,3,1,0,0,0,0,0,1,0,3,0,0,0,1],
+                    [1,2,1,1,0,0,0,1,1,1,0,0,0,1,1,1,2,1],
+                    [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
+                ]
+            },
+            2: {
+                name: "STAGE 02: SECURITY FIREWALL CORES",
+                grid: [
+                    [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+                    [1,4,0,0,0,1,2,0,0,0,0,2,1,0,0,0,3,1],
+                    [1,1,1,1,0,1,1,1,1,1,1,1,1,0,1,1,1,1],
+                    [1,2,0,1,0,0,0,0,3,0,0,0,0,0,1,0,2,1],
+                    [1,0,0,1,1,1,1,0,1,1,0,1,1,1,1,0,0,1],
+                    [1,3,0,0,0,0,1,0,1,1,0,1,0,0,0,0,3,1],
+                    [1,1,1,1,1,0,1,0,2,2,0,1,0,1,1,1,1,1],
+                    [1,0,0,0,1,0,1,1,1,1,1,1,0,1,0,0,0,1],
+                    [1,2,1,0,1,0,0,0,3,0,0,0,0,1,0,1,2,1],
+                    [1,0,1,0,1,1,1,1,1,1,1,1,1,1,0,1,0,1],
+                    [1,0,0,0,0,0,0,2,0,0,2,0,0,0,0,0,0,1],
+                    [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
+                ]
+            },
+            3: {
+                name: "STAGE 03: THE BOSS CORE MATRIX",
+                grid: [
+                    [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+                    [1,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2,1],
+                    [1,0,1,1,1,1,1,1,0,0,1,1,1,1,1,1,0,1],
+                    [1,0,1,0,0,0,0,0,0,0,0,0,0,0,0,1,0,1],
+                    [1,0,1,0,1,1,1,1,1,1,1,1,1,1,0,1,0,1],
+                    [1,0,1,0,1,0,0,0,0,0,0,0,0,1,0,1,0,1],
+                    [1,0,1,0,1,0,0,0,5,0,0,0,0,1,0,1,0,1],
+                    [1,0,1,0,1,0,0,0,0,0,0,0,0,1,0,1,0,1],
+                    [1,0,1,0,1,1,1,1,1,1,1,1,1,1,0,1,0,1],
+                    [1,0,1,0,0,0,0,0,0,0,0,0,0,0,0,1,0,1],
+                    [1,2,1,1,1,1,1,1,0,0,1,1,1,1,1,1,2,1],
+                    [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
+                ]
+            }
+        };
+
+        let currentGrid = [];
+        let player = { x: 1, y: 1 };
+        let drones = [];
+        let bossCore = null;
+
+        let hackingState = {
+            active: false,
+            matrix: [],
+            targetSeq: [],
+            playerIndex: 0,
+            cursorX: 0,
+            cursorY: 0,
+            timeLeft: 10,
+            nodeX: -1,
+            nodeY: -1
+        };
+
+        let tutorialStep = 0;
+        const tutorialCards = [
+            { text: "Welcome Operator. Press WASD or Arrow Keys to navigate your avatar down corridors.", trigger: "move" },
+            { text: "Excellent. Seek out the glowing blue Access Core Terminals (T). Stand adjacent to one.", trigger: "find_node" },
+            { text: "Terminal Link Active! Complete the Breach Matrix by hitting matching hex sequences.", trigger: "hack_success" },
+            { text: "Warning: Cybernetic security drones patrol this sector. Avoid their laser sight lines.", trigger: "avoid_drone" },
+            { text: "Emergency items mapped to Hotkeys 1-3. Press '1' for Terminal Cloak stealth mode.", trigger: "use_item" }
+        ];
+
+        function initSaveState() {
+            let saved = localStorage.getItem('Z3RO_MAX_STAGE');
+            if (saved) {
+                currentLevel = Math.min(parseInt(saved), 3);
+            }
+        }
+        function saveProgress() {
+            localStorage.setItem('Z3RO_MAX_STAGE', currentLevel);
+        }
+
+        function loadLevelMatrix(stageNum) {
+            alarmActive = false;
+            glitchIntensity = 0;
+            drones = [];
+            bossCore = null;
+            hackingState.active = false;
+
+            let source = CAMPAIGN_MAPS[stageNum];
+            if (gameMode === 'SURVIVAL') {
+                source = generateSurvivalGrid(stageNum);
+            } else if (gameMode === 'EDITOR') {
+                let savedCustom = localStorage.getItem('Z3RO_CUSTOM_MAP');
+                if (savedCustom) {
+                    source = { name: "SANDBOX TEST NETGRID", grid: JSON.parse(savedCustom) };
+                } else {
+                    source = CAMPAIGN_MAPS[1];
+                }
+            } else if (gameMode === 'TUTORIAL') {
+                source = CAMPAIGN_MAPS[1];
+                tutorialStep = 0;
+            }
+
+            currentGrid = JSON.parse(JSON.stringify(source.grid));
+
+            for (let r = 0; r < ROWS; r++) {
+                for (let c = 0; c < COLS; c++) {
+                    if (currentGrid[r][c] === 4) {
+                        player.x = c;
+                        player.y = r;
+                        currentGrid[r][c] = 0;
+                    } else if (currentGrid[r][c] === 3) {
+                        drones.push({
+                            x: c, y: r,
+                            startX: c, startY: r,
+                            dir: 1, moveTick: 0,
+                            speed: gameMode === 'SURVIVAL' ? Math.max(15 - stageNum, 6) : 20
+                        });
+                        currentGrid[r][c] = 0;
+                    } else if (currentGrid[r][c] === 5) {
+                        bossCore = {
+                            x: c, y: r,
+                            hp: 3, maxHp: 3,
+                            attackPhase: 0,
+                            phaseTimer: 0,
+                            beams: []
+                        };
+                    }
+                }
+            }
+            gameTimer = 180;
+        }
+
+        function generateSurvivalGrid(wave) {
+            let grid = Array(ROWS).fill(null).map(() => Array(COLS).fill(1));
+            for (let r = 1; r < ROWS - 1; r++) {
+                for (let c = 1; c < COLS - 1; c++) {
+                    grid[r][c] = 0;
+                }
+            }
+            for (let k = 0; k < 25; k++) {
+                let rx = Math.floor(Math.random() * (COLS - 2)) + 1;
+                let ry = Math.floor(Math.random() * (ROWS - 2)) + 1;
+                if ((rx !== 1 || ry !== 1) && grid[ry][rx] === 0) {
+                    grid[ry][rx] = 1;
+                }
+            }
+            let terminalsToSpawn = 3 + Math.min(wave, 5);
+            while (terminalsToSpawn > 0) {
+                let rx = Math.floor(Math.random() * (COLS - 2)) + 1;
+                let ry = Math.floor(Math.random() * (ROWS - 2)) + 1;
+                if (grid[ry][rx] === 0 && (rx !== 1 || ry !== 1)) {
+                    grid[ry][rx] = 2;
+                    terminalsToSpawn--;
+                }
+            }
+            grid[1][1] = 4; 
+            let droneCount = 1 + Math.floor(wave / 2);
+            for (let d = 0; d < droneCount; d++) {
+                let rx = Math.floor(Math.random() * (COLS - 3)) + 2;
+                let ry = Math.floor(Math.random() * (ROWS - 3)) + 2;
+                if (grid[ry][rx] === 0) grid[ry][rx] = 3;
+            }
+
+            return { name: `SURVIVAL VECTOR: NODE-${wave}`, grid: grid };
+        }
+
+        function triggerHackingInterface(tx, ty) {
+            AudioEngine.playStep();
+            hackingState.active = true;
+            hackingState.nodeX = tx;
+            hackingState.nodeY = ty;
+            hackingState.timeLeft = 12 - Math.min(currentLevel, 4);
+            hackingState.playerIndex = 0;
+            hackingState.cursorX = 0;
+            hackingState.cursorY = 0;
+
+            const hexValues = ['1C', 'E9', '7A', '55', 'BD', 'FF'];
+            hackingState.matrix = [];
+            for (let r = 0; r < 4; r++) {
+                let row = [];
+                for (let c = 0; c < 4; c++) {
+                    row.push(hexValues[Math.floor(Math.random() * hexValues.length)]);
+                }
+                hackingState.matrix.push(row);
+            }
+
+            hackingState.targetSeq = [];
+            for (let i = 0; i < 3; i++) {
+                hackingState.targetSeq.push(hexValues[Math.floor(Math.random() * hexValues.length)]);
+            }
+
+            if (gameMode === 'TUTORIAL' && tutorialStep === 1) {
+                tutorialStep = 2;
+            }
+        }
+
+        function executeHackSelection() {
+            let selected = hackingState.matrix[hackingState.cursorY][hackingState.cursorX];
+            let target = hackingState.targetSeq[hackingState.playerIndex];
+
+            if (selected === target) {
+                hackingState.playerIndex++;
+                AudioEngine.playStep();
+                if (hackingState.playerIndex >= hackingState.targetSeq.length) {
+                    AudioEngine.playSuccess();
+                    hackingState.active = false;
+                    currentGrid[hackingState.nodeY][hackingState.nodeX] = 0; 
+                    score += 250;
+                    
+                    if (gameMode === 'TUTORIAL' && tutorialStep === 2) {
+                        tutorialStep = 3;
+                    }
+                    checkWinCondition();
+                }
+            } else {
+                AudioEngine.playFailure();
+                glitchIntensity = 20;
+                hackingState.active = false;
+                alarmActive = true;
+            }
+        }
+
+        function checkWinCondition() {
+            if (bossCore) {
+                if (bossCore.hp <= 0) {
+                    AudioEngine.playVictory();
+                    alert("CENTRAL AI PURGED. NETWORK ENTIRELY COMPROMISED!");
+                    currentLevel = 1;
+                    gameMode = 'CAMPAIGN';
+                    loadLevelMatrix(1);
+                }
+                return;
+            }
+
+            let nodesLeft = 0;
+            for (let r = 0; r < ROWS; r++) {
+                for (let c = 0; c < COLS; c++) {
+                    if (currentGrid[r][c] === 2) nodesLeft++;
+                }
+            }
+
+            if (nodesLeft === 0) {
+                AudioEngine.playVictory();
+                if (gameMode === 'CAMPAIGN') {
+                    if (currentLevel < 3) {
+                        currentLevel++;
+                        saveProgress();
+                        alert(`FIREWALL OVERRIDDEN. PASSING TO LAYER STAGE 0${currentLevel}`);
+                        loadLevelMatrix(currentLevel);
+                    } else {
+                        alert("CAMPAIGN COMPLETE! YOU ARE THE ULTIMATE ROOT PRIVILEGE.");
+                        currentLevel = 1;
+                        loadLevelMatrix(1);
+                    }
+                } else if (gameMode === 'SURVIVAL') {
+                    currentLevel++;
+                    alert(`SURVIVAL STREAM COMPLETED. LOADING WAVE VECTOR ${currentLevel}`);
+                    loadLevelMatrix(currentLevel);
+                }
+            }
+        }
+
+        function movePlayer(dx, dy) {
+            if (hackingState.active) {
+                if (dx === 1) hackingState.cursorX = Math.min(hackingState.cursorX + 1, 3);
+                if (dx === -1) hackingState.cursorX = Math.max(hackingState.cursorX - 1, 0);
+                if (dy === 1) hackingState.cursorY = Math.min(hackingState.cursorY + 1, 3);
+                if (dy === -1) hackingState.cursorY = Math.max(hackingState.cursorY - 1, 0);
+                return;
+            }
+
+            let targetX = player.x + dx;
+            let targetY = player.y + dy;
+
+            if (targetX >= 0 && targetX < COLS && targetY >= 0 && targetY < ROWS) {
+                let cell = currentGrid[targetY][targetX];
+                if (cell !== 1) { 
+                    player.x = targetX;
+                    player.y = targetY;
+                    AudioEngine.playStep();
+
+                    if (gameMode === 'TUTORIAL' && tutorialStep === 0) {
+                        tutorialStep = 1;
+                    }
+
+                    if (cell === 2) {
+                        triggerHackingInterface(targetX, targetY);
+                    }
+                }
+            }
+        }
+
+        function processDrones() {
+            let cloakActive = inventory.active;
+
+            drones.forEach(drone => {
+                drone.moveTick++;
+                if (drone.moveTick >= drone.speed) {
+                    drone.moveTick = 0;
+                    
+                    let nextX = drone.x + drone.dir;
+                    if (nextX < 0 || nextX >= COLS || currentGrid[drone.y][nextX] === 1) {
+                        drone.dir *= -1;
+                    } else {
+                        drone.x += drone.dir;
+                    }
+                }
+
+                if (!cloakActive) {
+                    if (drone.y === player.y) {
+                        let step = Math.sign(player.x - drone.x);
+                        let blocked = false;
+                        if (step !== 0) {
+                            for (let x = drone.x + step; x !== player.x; x += step) {
+                                if (x >= 0 && x < COLS && currentGrid[drone.y][x] === 1) blocked = true;
+                            }
+                            if (!blocked && Math.abs(player.x - drone.x) < 6) {
+                                if (!alarmActive) {
+                                    alarmActive = true;
+                                    glitchIntensity = 15;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+
+            if (alarmActive) {
+                AudioEngine.playAlarm();
+                if (Math.random() < 0.05) glitchIntensity = Math.floor(Math.random() * 25);
+            }
+        }
+
+        function processBossCore() {
+            if (!bossCore) return;
+
+            bossCore.phaseTimer++;
+            if (bossCore.phaseTimer > 120) {
+                bossCore.phaseTimer = 0;
+                bossCore.attackPhase = (bossCore.attackPhase + 1) % 3;
+                bossCore.beams = [];
+
+                if (bossCore.attackPhase === 0) {
+                    bossCore.beams.push({ axis: 'H', index: player.y });
+                    bossCore.beams.push({ axis: 'V', index: player.x });
+                } else if (bossCore.attackPhase === 1) {
+                    if (drones.length < 3) {
+                        drones.push({ x: 4, y: 2, startX: 4, startY: 2, dir: 1, moveTick: 0, speed: 12 });
+                    }
+                }
+            }
+
+            if (bossCore.attackPhase === 0 && bossCore.phaseTimer > 40) {
+                bossCore.beams.forEach(b => {
+                    if (b.axis === 'H' && player.y === b.index) alarmActive = true;
+                    if (b.axis === 'V' && player.x === b.index) alarmActive = true;
+                });
+            }
+        }
+
+        function useInventoryItem(index) {
+            let item = inventory[index];
+            if (item.qty > 0 && !item.active) {
+                item.qty--;
+                item.active = true;
+                AudioEngine.playSuccess();
+
+                if (index === 0) { 
+                    setTimeout(() => item.active = false, 6000);
+                } else if (index === 1) { 
+                    for (let r = 0; r < ROWS; r++) {
+                        for (let c = 0; c < COLS; c++) {
+                            if (currentGrid[r][c] === 2 && Math.abs(player.x - c) <= 2 && Math.abs(player.y - r) <= 2) {
+                                triggerHackingInterface(c, r);
+                                break;
+                            }
+                        }
+                    }
+                    item.active = false;
+                } else if (index === 2) { 
+                    glitchIntensity = 40;
+                    let oldDrones = [...drones];
+                    drones = [];
+                    setTimeout(() => { drones = oldDrones; item.active = false; }, 5000);
+                }
+
+                if (gameMode === 'TUTORIAL' && tutorialStep === 4) {
+                    tutorialStep = 0;
+                    gameMode = 'CAMPAIGN';
+                    loadLevelMatrix(1);
+                }
+            }
+        }
+
+        function renderEngine() {
+            ticks++;
+            ctx.fillStyle = '#020105';
+            ctx.fillRect(0, 0, TOTAL_WIDTH, canvas.height);
+
+            for (let r = 0; r < ROWS; r++) {
+                for (let c = 0; c < COLS; c++) {
+                    let tile = currentGrid[r][c];
+                    let tx = c * TILE_SIZE;
+                    let ty = r * TILE_SIZE;
+
+                    ctx.strokeStyle = '#0e071a';
+                    ctx.lineWidth = 1;
+                    ctx.strokeRect(tx, ty, TILE_SIZE, TILE_SIZE);
+
+                    if (tile === 1) {
+                        SpriteAtlas.draw(ctx, 16, 0, tx, ty, TILE_SIZE, TILE_SIZE);
+                    } else if (tile === 2) {
+                        ctx.shadowBlur = 10; ctx.shadowColor = '#00ffcc';
+                        SpriteAtlas.draw(ctx, 32, 0, tx, ty, TILE_SIZE, TILE_SIZE);
+                        ctx.shadowBlur = 0;
+                    } else if (gameMode === 'EDITOR' && tile === 3) {
+                        SpriteAtlas.draw(ctx, 48, 0, tx, ty, TILE_SIZE, TILE_SIZE);
+                    } else if (gameMode === 'EDITOR' && tile === 4) {
+                        SpriteAtlas.draw(ctx, 0, 0, tx, ty, TILE_SIZE, TILE_SIZE);
+                    }
+                }
+            }
+
+            if (gameMode !== 'EDITOR') {
+                drones.forEach(d => {
+                    SpriteAtlas.draw(ctx, 48, 0, d.x * TILE_SIZE, d.y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+                    ctx.fillStyle = alarmActive ? 'rgba(255, 0, 85, 0.15)' : 'rgba(0, 255, 204, 0.08)';
+                    ctx.fillRect((d.x - 2) * TILE_SIZE, d.y * TILE_SIZE, TILE_SIZE * 5, TILE_SIZE);
+                });
+
+                if (bossCore) {
+                    ctx.fillStyle = bossCore.attackPhase === 0 ? '#ff0055' : '#00ffcc';
+                    ctx.fillRect(bossCore.x * TILE_SIZE, bossCore.y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+                    ctx.fillStyle = '#ffffff';
+                    ctx.font = '10px monospace';
+                    ctx.fillText(`CORE HP:${bossCore.hp}`, bossCore.x * TILE_SIZE, bossCore.y * TILE_SIZE - 5);
+
+                    if (bossCore.attackPhase === 0 && bossCore.phaseTimer > 40) {
+                        ctx.strokeStyle = '#ff0055';
+                        ctx.lineWidth = 4;
+                        bossCore.beams.forEach(b => {
+                            ctx.beginPath();
+                            if (b.axis === 'H') {
+                                ctx.moveTo(0, b.index * TILE_SIZE + TILE_SIZE/2);
+                                ctx.lineTo(GAME_WIDTH, b.index * TILE_SIZE + TILE_SIZE/2);
+                            } else {
+                                ctx.moveTo(b.index * TILE_SIZE + TILE_SIZE/2, 0);
+                                ctx.lineTo(b.index * TILE_SIZE + TILE_SIZE/2, canvas.height);
+                            }
+                            ctx.stroke();
+                        });
+                    }
+                }
+
+                if (!inventory.active || ticks % 10 < 5) {
+                    SpriteAtlas.draw(ctx, 0, 0, player.x * TILE_SIZE, player.y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+                }
+            }
+
+            renderDashboardHUD();
+
+            if (hackingState.active) {
+                renderHackingMatrix();
+            }
+
+            if (gameMode === 'TUTORIAL') {
+                renderTutorialOverlay();
+            }
+
+            if (glitchIntensity > 0) {
+                applyGlitchShaderEffect();
+                glitchIntensity--;
+            }
+        }
+
+        function renderDashboardHUD() {
+            let sx = GAME_WIDTH + 15;
+            ctx.fillStyle = '#0f091c';
+            ctx.fillRect(GAME_WIDTH, 0, SIDEBAR_WIDTH, canvas.height);
+            ctx.strokeStyle = '#3d1e6d';
+            ctx.lineWidth = 3;
+            ctx.strokeRect(GAME_WIDTH, 0, SIDEBAR_WIDTH, canvas.height);
+
+            ctx.fillStyle = '#ff007f';
+            ctx.font = 'bold 16px Courier New';
+            ctx.fillText("SYSTEM MONITOR", sx, 30);
+
+            ctx.fillStyle = '#00ffcc';
+            ctx.font = '13px Courier New';
+            ctx.fillText(`MODE: ${gameMode}`, sx, 60);
+            ctx.fillText(`NODE LAYER: 0${currentLevel}`, sx, 80);
+            ctx.fillText(`SCORE: ${String(score).padStart(6, '0')}`, sx, 100);
+            ctx.fillText(`SYSTEM SEC: ${gameTimer}s`, sx, 120);
+
+            if (alarmActive) {
+                ctx.fillStyle = '#ff0055';
+                ctx.fillText("!! ALARM INTRUSION !!", sx, 150);
+            } else {
+                ctx.fillStyle = '#00ffcc';
+                ctx.fillText("NET INFILTRATION SECURE", sx, 150);
+            }
+
+            ctx.fillStyle = '#ff007f';
+            ctx.fillText("ACTIVE INVENTORY MODS", sx, 200);
+
+            inventory.forEach((item, idx) => {
+                let iy = 230 + idx * 45;
+                ctx.fillStyle = item.active ? '#ff007f' : (item.qty > 0 ? '#00ffcc' : '#444');
+                ctx.strokeRect(sx, iy, SIDEBAR_WIDTH - 30, 35);
+                ctx.fillText(`[${idx + 1}] ${item.name}`, sx + 10, iy + 22);
+                ctx.fillText(`x${item.qty}`, sx + SIDEBAR_WIDTH - 60, iy + 22);
+            });
+        }
+
+        function renderHackingMatrix() {
+            let mx = 120, my = 100, mw = 480, mh = 380;
+            ctx.fillStyle = 'rgba(5, 2, 12, 0.95)';
+            ctx.fillRect(mx, my, mw, mh);
+            ctx.strokeStyle = '#00ffcc';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(mx, my, mw, mh);
+
+            ctx.fillStyle = '#00ffcc';
+            ctx.font = 'bold 18px Courier New';
+            ctx.fillText("BREACH PROTOCOL MATRIX", mx + 20, my + 40);
+
+            for (let r = 0; r < 4; r++) {
+                for (let c = 0; c < 4; c++) {
+                    let hx = mx + 50 + c * 60;
+                    let hy = my + 100 + r * 50;
+
+                    if (hackingState.cursorX === c && hackingState.cursorY === r) {
+                        ctx.fillStyle = '#ff007f';
+                        ctx.fillRect(hx - 8, hy - 18, 45, 25);
+                        ctx.fillStyle = '#ffffff';
+                    } else {
+                        ctx.fillStyle = '#00ffcc';
+                    }
+                    ctx.fillText(hackingState.matrix[r][c], hx, hy);
+                }
+            }
+
+            ctx.fillStyle = '#ff007f';
+            ctx.fillText("REQUIRED KEY STRING:", mx + 20, my + 310);
+            hackingState.targetSeq.forEach((seq, idx) => {
+                ctx.fillStyle = idx < hackingState.playerIndex ? '#444' : '#00ffcc';
+                ctx.fillText(seq, mx + 50 + idx * 50, my + 340);
+            });
+        }
+
+        function renderTutorialOverlay() {
+            let card = tutorialCards[tutorialStep];
+            if (!card) return;
+
+            let tx = 40, ty = 480, tw = 640, th = 100;
+            ctx.fillStyle = 'rgba(15, 9, 28, 0.9)';
+            ctx.fillRect(tx, ty, tw, th);
+            ctx.strokeStyle = '#ff007f';
+            ctx.strokeRect(tx, ty, tw, th);
+
+            ctx.fillStyle = '#ffffff';
+            ctx.font = '14px Courier New';
+            wrapText(ctx, `[GUIDE]: ${card.text}`, tx + 15, ty + 30, tw - 30, 20);
+        }
+
+        function wrapText(context, text, x, y, maxWidth, lineHeight) {
+            let words = text.split(' ');
+            let line = '';
+            for(let n = 0; n < words.length; n++) {
+                let testLine = line + words[n] + ' ';
+                let metrics = context.measureText(testLine);
+                if (metrics.width > maxWidth && n > 0) {
+                    context.fillText(line, x, y);
+                    line = words[n] + ' ';
+                    y += lineHeight;
+                } else {
+                    line = testLine;
+                }
+            }
+            context.fillText(line, x, y);
+        }
+
+        function applyGlitchShaderEffect() {
+            let sliceCount = Math.floor(Math.random() * glitchIntensity) + 2;
+            for (let i = 0; i < sliceCount; i++) {
+                let sy = Math.floor(Math.random() * canvas.height);
+                let sh = Math.floor(Math.random() * 30) + 5;
+                let disp = Math.floor(Math.random() * glitchIntensity) - (glitchIntensity / 2);
+                
+                try {
+                    let imgData = ctx.getImageData(0, sy, GAME_WIDTH, sh);
+                    ctx.putImageData(imgData, disp, sy);
+                } catch(e) {}
+            }
+        }
+
+        window.addEventListener('keydown', e => {
+            if (gameMode === 'EDITOR') return;
+
+            switch(e.key) {
+                case 'ArrowUp': case 'w': case 'W': movePlayer(0, -1); break;
+                case 'ArrowDown': case 's': case 'S': movePlayer(0, 1); break;
+                case 'ArrowLeft': case 'a': case 'A': movePlayer(-1, 0); break;
+                case 'ArrowRight': case 'd': case 'D': movePlayer(1, 0); break;
+                case 'Enter': case ' ':
+                    if (hackingState.active) executeHackSelection();
+                    break;
+                case '1': useInventoryItem(0); break;
+                case '2': useInventoryItem(1); break;
+                case '3': useInventoryItem(2); break;
+            }
+        });
+
+        let currentSelectedEditorTile = 0;
+        let isPainting = false;
+
+        canvas.addEventListener('mousedown', handleEditorInput);
+        canvas.addEventListener('mousemove', e => { if (isPainting) handleEditorInput(e); });
+        window.addEventListener('mouseup', () => isPainting = false);
+
+        function handleEditorInput(e) {
+            if (gameMode !== 'EDITOR') return;
+            isPainting = true;
+
+            let rect = canvas.getBoundingClientRect();
+            let mx = e.clientX - rect.left;
+            let my = e.clientY - rect.top;
+
+            let cx = Math.floor(mx / TILE_SIZE);
+            let cy = Math.floor(my / TILE_SIZE);
+
+            if (cx >= 0 && cx < COLS && cy >= 0 && cy < ROWS) {
+                currentGrid[cy][cx] = currentSelectedEditorTile;
+            }
+        }
+
+        document.getElementById('btn-game').addEventListener('click', () => {
+            setModeConfig('CAMPAIGN');
+            loadLevelMatrix(currentLevel);
+        });
+        document.getElementById('btn-survival').addEventListener('click', () => {
+            setModeConfig('SURVIVAL');
+            currentLevel = 1;
+            loadLevelMatrix(1);
+        });
+        document.getElementById('btn-editor').addEventListener('click', () => {
+            setModeConfig('EDITOR');
+            loadLevelMatrix(1);
+        });
+        document.getElementById('btn-tutorial').addEventListener('click', () => {
+            setModeConfig('TUTORIAL');
+            loadLevelMatrix(1);
+        });
+        document.getElementById('btn-reset-save').addEventListener('click', () => {
+            localStorage.removeItem('Z3RO_MAX_STAGE');
+            currentLevel = 1;
+            alert("Save profiles wiped.");
+            loadLevelMatrix(1);
+        });
+
+        document.getElementById('btn-save-map').addEventListener('click', () => {
+            localStorage.setItem('Z3RO_CUSTOM_MAP', JSON.stringify(currentGrid));
+            alert("Custom netgrid configuration cached inside memory sandbox core matrices successfully.");
+        });
+
+        document.getElementById('btn-export-map').addEventListener('click', () => {
+            if (gameMode !== 'EDITOR') return;
+            const dataStr = JSON.stringify(currentGrid);
+            prompt("Copy this level JSON map string to share with others:", dataStr);
+        });
+
+        document.getElementById('btn-import-map').addEventListener('click', () => {
+            if (gameMode !== 'EDITOR') return;
+            const inputStr = prompt("Paste your map JSON string layout data below:");
+            if (inputStr) {
+                try {
+                    const parsedGrid = JSON.parse(inputStr);
+                    if (Array.isArray(parsedGrid) && parsedGrid.length === ROWS && Array.isArray(parsedGrid[0]) && parsedGrid[0].length === COLS) {
+                        currentGrid = parsedGrid;
+                        localStorage.setItem('Z3RO_CUSTOM_MAP', JSON.stringify(currentGrid));
+                        alert("Network matrix layout imported successfully!");
+                    } else {
+                        alert("Error: String size does not match valid 18x12 network constraints.");
+                    }
+                } catch(e) {
+                    alert("Malformed code stream string. Unable to securely decrypt.");
+                }
+            }
+        });
+
+        document.querySelectorAll('.palette-item').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                document.querySelectorAll('.palette-item').forEach(b => b.classList.remove('active'));
+                e.target.classList.add('active');
+                currentSelectedEditorTile = parseInt(e.target.getAttribute('data-tile'));
+            });
+        });
+
+        function setModeConfig(mode) {
+            gameMode = mode;
+            document.querySelectorAll('#controls-panel button').forEach(b => b.classList.remove('active'));
+            document.getElementById('editor-palette').style.display = mode === 'EDITOR' ? 'flex' : 'none';
+
+            if (mode === 'CAMPAIGN') document.getElementById('btn-game').classList.add('active');
+            if (mode === 'SURVIVAL') document.getElementById('btn-survival').classList.add('active');
+            if (mode === 'EDITOR') document.getElementById('btn-editor').classList.add('active');
+            if (mode === 'TUTORIAL') document.getElementById('btn-tutorial').classList.add('active');
+        }
+
+        function mainTickerTimeLoop(timestamp) {
+            let delta = timestamp - lastTime;
+            if (delta >= 1000) {
+                lastTime = timestamp;
+                if (!hackingState.active && gameMode !== 'EDITOR') {
+                    if (gameTimer > 0) gameTimer--;
+                    else {
+                        AudioEngine.playFailure();
+                        alert("NETWORK DETECTED TRACE ROUTE SYNCHRONIZATION OVERFLOW. INFILTRATION REJECTED.");
+                        loadLevelMatrix(currentLevel);
+                    }
+                }
+            }
+
+            if (gameMode !== 'EDITOR') {
+                processDrones();
+                processBossCore();
+            }
+            renderEngine();
+
+            loopId = requestAnimationFrame(mainTickerTimeLoop);
+        }
+
+        initSaveState();
+        loadLevelMatrix(1);
+        loopId = requestAnimationFrame(mainTickerTimeLoop);
+
+    </script>
+</body>
+</html>
